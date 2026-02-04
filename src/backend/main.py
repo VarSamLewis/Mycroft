@@ -1,16 +1,17 @@
 import pprint
 
-from src.backend.github import discover_files, read_file
+from src.backend.file import FileManager
 from src.backend.parsing import extract_graph, extract_graph_from_python, merge_graphs
 from src.backend.db import write_graph_to_neo4j
 
 
 def ingest_codebase(codebase_path, database="default", schema="public"):
-    files = discover_files(codebase_path)
+    fm = FileManager(codebase_path)
+    files = fm.discover_files()
     graphs = []
 
     for filepath in files:
-        content = read_file(filepath)
+        content = fm.read_file(filepath)
 
         if filepath.endswith(".sql"):
             try:
