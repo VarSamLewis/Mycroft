@@ -59,7 +59,9 @@ def write_graph_to_neo4j(
 
         for edge in graph["edges"]["derived_from"]:
             session.run(
-                "MATCH (c1:Column {key: $from}), (c2:Column {key: $to}) MERGE (c1)-[:DERIVED_FROM {transformation: $transformation}]->(c2)",
+                "MATCH (c1:Column {key: $from}), (c2:Column {key: $to}) "
+                "MERGE (c1)-[r:DERIVED_FROM]->(c2) "
+                "FOREACH (_ IN CASE WHEN $transformation IS NOT NULL THEN [1] ELSE [] END | SET r.transformation = $transformation)",
                 **edge,
             )
 

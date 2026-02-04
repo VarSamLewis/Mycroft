@@ -4,9 +4,14 @@ import sqlglot
 from sqlglot import exp, parse_one
 
 
+def _is_comment_only(s: str) -> bool:
+    lines = [line.strip() for line in s.splitlines()]
+    return all(line == "" or line.startswith("--") for line in lines)
+
+
 def split_query(sql: str):
     segments = sql.split(";")
-    return [s.strip() for s in segments if s.strip()]
+    return [s.strip() for s in segments if s.strip() and not _is_comment_only(s)]
 
 
 def _build_cte_map(tree):
@@ -66,15 +71,28 @@ def extract_graph(sql, database="default", schema="public", source_file=None):
         if not sql_str:
             continue
 
-        tree = parse_one(sql_str)
+        try:
+            tree = parse_one(sql_str)
+        except sqlglot.errors.ParseError:
+            continue
         cte_map = _build_cte_map(tree)
 
         target_node = tree.find(exp.Create)
         target_name = target_node.this.name if target_node else None
 
+        insert_node = tree.find(exp.Insert)
+        if not target_name and insert_node:
+            insert_table = insert_node.this.find(exp.Table)
+            target_name = insert_table.name if insert_table else None
+            target_node = insert_node
+
+        update_node = tree.find(exp.Update)
+        if not target_name and update_node:
+            target_name = update_node.this.name if update_node.this else None
+
         alias_to_table = {}
         for table in tree.find_all(exp.Table):
-            if table.name in cte_map:
+            if not table.name or table.name in cte_map:
                 continue
             table_key = f"{schema_key}.{table.name}"
             nodes["tables"][table_key] = {
@@ -131,12 +149,18 @@ def extract_graph(sql, database="default", schema="public", source_file=None):
         if not main_select:
             main_select = tree.find(exp.Select)
 
+        # For INSERT INTO target (col_a, col_b) SELECT ..., the explicit
+        # column list defines target names positionally over the SELECT exprs.
+        insert_col_names = []
+        if insert_node and insert_node.this and hasattr(insert_node.this, 'expressions'):
+            insert_col_names = [e.name for e in insert_node.this.expressions]
+
         if main_select and target_name:
             target_table_key = f"{schema_key}.{target_name}"
             main_from = main_select.find(exp.From)
             main_source = main_from.find(exp.Table).name if main_from else None
 
-            for expression in main_select.expressions:
+            for idx, expression in enumerate(main_select.expressions):
                 if isinstance(expression, exp.Star):
                     if main_source and main_source in cte_map:
                         for cte_col in cte_map[main_source]["columns"]:
@@ -162,7 +186,7 @@ def extract_graph(sql, database="default", schema="public", source_file=None):
                     continue
 
                 source_col = expression.find(exp.Column)
-                target_col_name = expression.alias_or_name
+                target_col_name = insert_col_names[idx] if idx < len(insert_col_names) else expression.alias_or_name
                 target_col_key = f"{target_table_key}.{target_col_name}"
 
                 is_transformed = not isinstance(
@@ -216,7 +240,60 @@ def extract_graph(sql, database="default", schema="public", source_file=None):
                             "to": source_col_key,
                             "transformation": transformation,
                         }
+                    ) 
+
+        # UPDATE target SET col = src.col FROM source src
+        if update_node and target_name:
+            target_table_key = f"{schema_key}.{target_name}"
+            update_from = update_node.find(exp.From)
+            update_source = update_from.find(exp.Table).name if update_from else None
+
+            for eq in update_node.args.get("expressions", []):
+                target_col_name = eq.this.name
+                target_col_key = f"{target_table_key}.{target_col_name}"
+
+                nodes["columns"][target_col_key] = {
+                    "name": target_col_name,
+                    "data_type": None,
+                    "is_nullable": None,
+                }
+                edges["has_column"].append(
+                    {"from": target_table_key, "to": target_col_key}
+                )
+
+                source_col = eq.expression.find(exp.Column)
+                if not source_col:
+                    continue
+
+                source_table_ref = source_col.table
+                if source_table_ref in alias_to_table:
+                    source_table_name = alias_to_table[source_table_ref]
+                else:
+                    source_table_name = source_table_ref or update_source
+
+                source_table_key = f"{schema_key}.{source_table_name}"
+                source_col_key = f"{source_table_key}.{source_col.name}"
+
+                if source_col_key not in nodes["columns"]:
+                    nodes["columns"][source_col_key] = {
+                        "name": source_col.name,
+                        "data_type": None,
+                        "is_nullable": None,
+                    }
+                    edges["has_column"].append(
+                        {"from": source_table_key, "to": source_col_key}
                     )
+
+                is_transformed = not isinstance(eq.expression, exp.Column)
+                transformation = eq.expression.sql() if is_transformed else None
+
+                edges["derived_from"].append(
+                    {
+                        "from": target_col_key,
+                        "to": source_col_key,
+                        "transformation": transformation,
+                    }
+                )
 
     return {"nodes": nodes, "edges": edges}
 
