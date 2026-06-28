@@ -1,57 +1,78 @@
-# DataLineage MVP Technical Specification
+# Mycroft — Technical Specification
 
 ## Overview
 
-A tool that parses codebases containing SQL and Python (pyspark, pandas, polars) to produce an interactive data lineage graph. The primary use case is debugging upstream data issues by tracing lineage downstream.
+Mycroft parses codebases containing SQL and Python to produce an interactive data lineage graph. The primary use case is debugging upstream data issues by tracing lineage downstream.
 
 ## Goals
 
-- Parse SQL files and embedded SQL strings in Python code
-- Extract column-level lineage including transformations
-- Provide an interactive web UI to explore the data model (ERD + lineage)
-- Support mixed codebases (SQL + Python)
+- Parse SQL files and embedded SQL strings in Python code.
+- Extract column-level lineage including transformations.
+- Store schema metadata and lineage in Neo4j.
+- Provide an HTTP API for clients.
+- Provide an interactive web UI to explore tables, columns, and lineage.
+- Support mixed codebases (SQL + Python).
 
 ## Non-Goals (Future)
 
-- Schema versioning / temporal lineage
-- Runtime lineage capture
-- Data quality integration
-- MCP interface for querying source data
+- Schema versioning / temporal lineage.
+- Runtime lineage capture.
+- Data quality integration.
+- MCP interface for querying source data.
+- Full static analysis of DataFrame operations (`.select`, `.withColumn`, `.join`, etc.).
+- Search, filtering, and ERD export.
 
 ## Architecture
 
 ```
 ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Codebase      │     │     Neo4j       │     │    Web UI       │
-│  (.sql, .py)    │────▶│ (schema +       │────▶│  (interactive)  │
-└─────────────────┘     │  lineage graph) │     └─────────────────┘
+│   Codebase      │     │     Neo4j       │     │   Web UI        │
+│  (.sql, .py)    │────▶│ (schema +       │◀────│  (React +       │
+└─────────────────┘     │  lineage graph) │     │  React Flow)    │
+                        └─────────────────┘     └─────────────────┘
+                                   ▲
+                                   │ HTTP
+                        ┌─────────────────┐
+                        │   FastAPI       │
+                        │ src/consum_api  │
+                        └─────────────────┘
+                                   ▲
+                                   │ (future)
+                        ┌─────────────────┐
+                        │   CLI           │
+                        │ src/cli/cli.py  │
                         └─────────────────┘
 ```
 
-Single database (Neo4j) stores both schema metadata and lineage. Parse order doesn't matter - nodes are created/updated via MERGE.
+Single database (Neo4j) stores both schema metadata and lineage. Parse order doesn't matter — nodes are created or updated via `MERGE`.
 
-### Components
+## Components
 
-#### 1. Parser Service
+### 1. Parser Service — `src/backend/`
 
-**Input:** Path to codebase
+**Input:** Path to a codebase directory.
 
-**Output:** Structured lineage data
+**Output:** Structured lineage data.
+
+**Files:**
+- `src/backend/parsing.py` — SQL and Python parsing logic.
+- `src/backend/main.py` — Ingestion orchestration.
+- `src/backend/file.py` — File discovery and reading.
 
 **Responsibilities:**
-- Glob for `.sql` and `.py` files
-- Parse SQL using sqlglot
-- Parse Python using `ast` module:
-  - Extract SQL strings from `spark.sql()`, `pd.read_sql()`, `cursor.execute()`
-  - Trace DataFrame operations (`.select()`, `.join()`, `.withColumn()`, etc.)
-- Resolve `SELECT *` and DataFrame reads against known schema
+- Glob for `.sql` and `.py` files.
+- Parse SQL using `sqlglot`.
+- Parse Python using `ast`:
+  - Extract SQL strings from `spark.sql()`, `pd.read_sql()`, `cursor.execute()`.
+  - Basic extraction of `spark.read.table()` / `df.write.saveAsTable()` references.
+- Build a graph of databases, schemas, tables, columns, and `DERIVED_FROM` edges.
 
 **Libraries:**
-- `sqlglot` - SQL parsing
-- `ast` (stdlib) - Python parsing
-- `neo4j` - Graph database driver
+- `sqlglot` — SQL parsing.
+- `ast` (stdlib) — Python parsing.
+- `neo4j` — Graph database driver.
 
-#### 2. Graph Store (Neo4j)
+### 2. Graph Store — Neo4j — `src/backend/db.py`
 
 **Hierarchical Node Structure:**
 
@@ -59,14 +80,21 @@ Single database (Neo4j) stores both schema metadata and lineage. Parse order doe
 (:Database)-[:HAS_SCHEMA]->(:Schema)-[:HAS_TABLE]->(:Table)-[:HAS_COLUMN]->(:Column)
 ```
 
+**Transformation Nodes:**
+
+```
+(:Table)-[:HAS_TRANSFORMATION]->(:Transformation)
+```
+
 **Node Types:**
 
 | Node | Properties |
 |------|------------|
-| `Database` | name |
-| `Schema` | name |
-| `Table` | name, type (physical \| cte \| view \| dataframe), source_file |
-| `Column` | name, data_type, is_nullable |
+| `Database` | `key`, `name` |
+| `Schema` | `key`, `name` |
+| `Table` | `key`, `name`, `type` (physical \| cte \| view \| dataframe), `source_file` |
+| `Column` | `key`, `name`, `data_type`, `is_nullable` |
+| `Transformation` | `key`, `type`, `expression` |
 
 **Edge Types:**
 
@@ -75,91 +103,107 @@ Single database (Neo4j) stores both schema metadata and lineage. Parse order doe
 | `HAS_SCHEMA` | Database to Schema |
 | `HAS_TABLE` | Schema to Table |
 | `HAS_COLUMN` | Table to Column |
+| `HAS_TRANSFORMATION` | Table to Transformation |
 | `DERIVED_FROM` | Column lineage (with optional `transformation` property) |
 
-**Example - Creating Schema:**
+### 3. API — `src/consum_api/app.py`
 
-```cypher
-MERGE (db:Database {name: "analytics"})
-MERGE (s:Schema {name: "public"})
-MERGE (db)-[:HAS_SCHEMA]->(s)
-MERGE (t:Table {name: "users"})
-MERGE (s)-[:HAS_TABLE]->(t)
-MERGE (c:Column {name: "email", data_type: "VARCHAR"})
-MERGE (t)-[:HAS_COLUMN]->(c)
-```
+FastAPI application that owns the queries and response shapes.
 
-**Example - Creating Lineage:**
+**Endpoints:**
 
-```cypher
-MATCH (source:Column {name: "name"})<-[:HAS_COLUMN]-(st:Table {name: "raw_users"})
-MATCH (target:Column {name: "name_upper"})<-[:HAS_COLUMN]-(tt:Table {name: "users"})
-MERGE (target)-[:DERIVED_FROM {transformation: "UPPER(name)"}]->(source)
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/tables` | List all tables |
+| GET | `/tables/{table_key}` | Single table with columns and transformations |
+| GET | `/lineage/upstream/{column_key}` | Upstream columns for a column |
+| GET | `/lineage/downstream/{column_key}` | Downstream dependents of a column |
 
-**Example Queries:**
+### 4. Web UI — `src/frontend/`
 
-```cypher
-// ERD for a schema - get all tables and columns
-MATCH (s:Schema {name: "public"})-[:HAS_TABLE]->(t)-[:HAS_COLUMN]->(c)
-RETURN t.name AS table, collect(c.name) AS columns
+**Stack:**
+- React 19
+- Vite
+- React Router v7
+- React Query (TanStack Query)
+- React Flow (`@xyflow/react`)
+- Tailwind CSS
 
-// Upstream lineage - where does this column come from?
-MATCH (t:Table {name: "users"})-[:HAS_COLUMN]->(c:Column {name: "email"})
-MATCH (c)-[:DERIVED_FROM*]->(source)<-[:HAS_COLUMN]-(source_table)
-RETURN source.name, source_table.name
+**Views:**
 
-// Downstream lineage - what depends on this table?
-MATCH (t:Table {name: "raw_events"})-[:HAS_COLUMN]->(c)
-MATCH (c)<-[:DERIVED_FROM*]-(downstream)<-[:HAS_COLUMN]-(downstream_table)
-RETURN DISTINCT downstream_table.name
+| Route | Component | Purpose |
+|-------|-----------|---------|
+| `/` | `RepoGraph` | Approximate repository-wide table connectivity |
+| `/tables/:tableKey` | `TableDetail` | Table metadata, columns, and transformations |
+| `/tables/:tableKey/lineage` | `TableLineage` | Table-level lineage graph |
+| `/columns/:columnKey` | `ColumnLineage` | Column upstream/downstream lineage graph |
+| `/columns/:columnKey/table` | `ColumnLineageTable` | Column lineage as a table |
 
-// Full lineage path with transformations
-MATCH (t:Table {name: "report"})-[:HAS_COLUMN]->(c:Column {name: "total"})
-MATCH path = (c)-[:DERIVED_FROM*]->(source)
-RETURN [rel in relationships(path) | rel.transformation] AS transformations
-```
+The `SchemaExplorer` sidebar lists databases, schemas, tables, and columns for navigation.
 
-#### 3. Web UI
+### 5. CLI — `src/cli/cli.py`
 
-**Framework:** TBD (React, Svelte, or similar)
+Currently a placeholder TUI clock app built with `textual`. Not connected to ingestion or querying.
 
-**Features:**
-- Interactive graph visualization (d3.js or similar)
-- Toggle between ERD view and lineage view
-- Search for database/schema/table/column
-- Click node to see upstream/downstream lineage
-- Filter by schema, file source, or lineage depth
-- Expand/collapse hierarchy levels
+### 6. Seed Data — `scripts/seed_data.py`
 
-## Data Flow
-
-1. **Ingest**
-   - Parse all SQL and Python files
-   - For DDL (CREATE TABLE): MERGE Database/Schema/Table/Column nodes
-   - For DML/transformations: MERGE DERIVED_FROM edges between columns
-   - Parse order doesn't matter - MERGE creates or updates
-
-2. **Query**
-   - User searches for a table/column
-   - Traverse HAS_* edges for ERD view
-   - Traverse DERIVED_FROM edges for lineage view
+Populates Neo4j with curated test data covering deep chains, wide fan-out, diamond patterns, cross-database lineage, and a wide table. Used for frontend development and demos.
 
 ## File Structure
 
 ```
-DataLineage/
-├── main.py              # Core parsing logic (exists)
-├── parsers/
-│   ├── sql_parser.py    # SQL file parsing
-│   └── python_parser.py # Python AST parsing for DataFrame ops
-├── db/
-│   └── neo4j.py         # Graph operations
-├── ingest.py            # Orchestrates parsing a codebase
-├── web/                 # Web UI
+Mycroft/
+├── COMMANDS.md                  # Common commands
+├── TECH_SPEC.md                 # This document
+├── main.py                      # Parser demo / standalone script
+├── scripts/
+│   └── seed_data.py             # Neo4j seed data
+├── src/
+│   ├── backend/
+│   │   ├── main.py              # Ingestion entry point
+│   │   ├── parsing.py           # SQL / Python parsing
+│   │   ├── db.py                # Neo4j read/write helpers
+│   │   ├── file.py              # File discovery
+│   │   └── requirements.txt
+│   ├── consum_api/
+│   │   ├── app.py               # FastAPI application
+│   │   └── requirements.txt
+│   ├── cli/
+│   │   ├── cli.py               # TUI placeholder
+│   │   └── requirements.txt
+│   └── frontend/
+│       ├── package.json
+│       ├── vite.config.ts
+│       └── src/
+│           ├── api/client.ts
+│           ├── components/
+│           │   ├── ColumnLineage/
+│           │   ├── ColumnLineageTable/
+│           │   ├── RepoGraph/
+│           │   ├── SchemaExplorer/
+│           │   ├── TableDetail/
+│           │   └── TableLineage/
+│           ├── hooks/
+│           ├── types.ts
+│           └── App.tsx
 └── tests/
-    └── test.py          # Tests (exists)
+    └── backend/
+        └── unit_tests.py        # Parser unit tests
 ```
+
+## Data Flow
+
+1. **Ingest**
+   - Run `python -m src.backend.main <path> [database] [schema]`.
+   - Parse all `.sql` and `.py` files.
+   - For DDL (`CREATE TABLE`): `MERGE` Database/Schema/Table/Column nodes.
+   - For DML/transformations: `MERGE` `DERIVED_FROM` edges between columns.
+   - Parse order doesn't matter — `MERGE` creates or updates.
+
+2. **Query**
+   - Web UI or CLI fetches from FastAPI.
+   - FastAPI traverses Neo4j and returns structured responses.
+   - UI renders tables, columns, and lineage graphs.
 
 ## Python Parsing Strategy
 
@@ -184,7 +228,7 @@ cursor.execute("SELECT ...")
 
 ### DataFrame Operation Tracing
 
-Map DataFrame methods to lineage:
+Not fully implemented. Planned mapping:
 
 | Operation | Lineage Effect |
 |-----------|----------------|
@@ -194,55 +238,66 @@ Map DataFrame methods to lineage:
 | `.drop("col")` | Column removed from lineage |
 | `.groupBy().agg()` | Aggregated columns derived from source |
 
-## API
+## API Usage
 
-### CLI
+### HTTP
 
 ```bash
-# Ingest a codebase
-datalineage ingest /path/to/codebase --db analytics
+# List tables
+curl http://localhost:8000/tables
 
-# Query lineage
-datalineage upstream --table users --column email
-datalineage downstream --table raw_events
+# Table detail
+curl http://localhost:8000/tables/acme.analytics.raw_events
 
-# Export ERD
-datalineage erd --schema public --format json
+# Upstream lineage
+curl http://localhost:8000/lineage/upstream/acme.analytics.raw_events.event_id
+
+# Downstream lineage
+curl http://localhost:8000/lineage/downstream/acme.analytics.raw_events.event_id
 ```
 
-### Programmatic
+### Python
 
 ```python
-from datalineage import ingest, query
+from src.backend.main import ingest_codebase
+from src.backend.db import read_upstream_lineage, read_downstream_lineage
 
-ingest("/path/to/codebase", db="analytics")
+# Ingest
+ingest_codebase("/path/to/codebase", database="analytics", schema="warehouse")
 
-# Get upstream sources for a column
-sources = query.upstream("users", "email")
-
-# Get downstream dependents
-dependents = query.downstream("raw_events")
-
-# Get ERD for a schema
-erd = query.erd("public")
+# Query lineage
+read_upstream_lineage("analytics.warehouse.fact_orders.customer_sk")
+read_downstream_lineage("analytics.warehouse.fact_orders.store_sk")
 ```
+
+## Commands
+
+See `COMMANDS.md` for the full list, including:
+
+- Starting Neo4j in Docker.
+- Installing dependencies.
+- Seeding test data.
+- Running the API and frontend dev servers.
+- Running tests.
+- Clearing the graph.
 
 ## MVP Deliverables
 
-1. SQL parser with CTE support (partially complete)
-2. Python parser for SQL string extraction
-3. Neo4j graph with hierarchical schema + lineage
-4. Basic web UI with ERD and lineage visualization
-5. CLI for ingestion and querying
+- [x] SQL parser with CTE support.
+- [x] Python parser for SQL string extraction.
+- [x] Neo4j graph with hierarchical schema + lineage.
+- [x] FastAPI for querying the graph.
+- [x] Basic web UI with schema explorer and lineage visualization.
+- [x] Table transformation display.
+- [ ] Functional CLI for ingestion and querying.
+- [ ] Search across databases, schemas, tables, and columns.
+- [ ] Filtering by schema, file source, or lineage depth.
+- [ ] ERD export.
+- [ ] Full DataFrame operation tracing.
 
 ## Open Questions
 
-1. **Python DataFrame tracing depth** - How much static analysis is feasible? Start with SQL string extraction, add DataFrame ops incrementally.
-
-2. **Web framework choice** - React for ecosystem, Svelte for simplicity?
-
-3. **Graph visualization library** - d3.js, vis.js, or Cytoscape.js?
-
-4. **Deployment** - Local Docker Compose for MVP? Cloud later?
-
-5. **Default database/schema** - How to handle SQL that doesn't specify schema? Configurable default?
+1. **Python DataFrame tracing depth** — How much static analysis is feasible? Currently limited to SQL string extraction; DataFrame ops are future work.
+2. **CLI scope** — Should the CLI become the primary ingestion interface, or remain a thin wrapper around `src.backend.main`?
+3. **Deployment** — Local Docker Compose for MVP? Cloud later?
+4. **Default database/schema** — Currently configurable per ingestion run; should project-level defaults be supported?
