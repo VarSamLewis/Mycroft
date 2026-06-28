@@ -1,11 +1,17 @@
 import pprint
 
-from src.backend.file import FileManager
-from src.backend.parsing import extract_graph, extract_graph_from_python, merge_graphs
-from src.backend.db import write_graph_to_neo4j
+from mycroft.backend.db import write_graph_to_neo4j
+from mycroft.backend.file import FileManager
+from mycroft.backend.parsing import (
+    extract_graph,
+    extract_graph_from_python,
+    merge_graphs,
+)
 
 
-def ingest_codebase(codebase_path, database="default", schema="public"):
+def ingest_codebase(
+    codebase_path: str, database: str = "default", schema: str = "public"
+) -> dict | None:
     fm = FileManager(codebase_path)
     files = fm.discover_files()
     graphs = []
@@ -38,7 +44,7 @@ def ingest_codebase(codebase_path, database="default", schema="public"):
                 continue
 
     if not graphs:
-        return
+        return None
 
     merged = merge_graphs(graphs)
     write_graph_to_neo4j(merged)
@@ -50,7 +56,7 @@ if __name__ == "__main__":
     import sys
 
     if len(sys.argv) < 2:
-        print("Usage: python -m src.backend.main <codebase_path> [database] [schema]")
+        print("Usage: python -m mycroft.backend.main <codebase_path> [database] [schema]")
         sys.exit(1)
 
     path = sys.argv[1]

@@ -2,8 +2,11 @@ from neo4j import GraphDatabase
 
 
 def write_graph_to_neo4j(
-    graph, uri="bolt://localhost:7687", user="neo4j", password="password123"
-):
+    graph: dict,
+    uri: str = "bolt://localhost:7687",
+    user: str = "neo4j",
+    password: str = "password123",
+) -> None:
     driver = GraphDatabase.driver(uri, auth=(user, password))
 
     with driver.session() as session:
@@ -68,7 +71,12 @@ def write_graph_to_neo4j(
     driver.close()
 
 
-def read_upstream_lineage(column_key, uri="bolt://localhost:7687", user="neo4j", password="password123"):
+def read_upstream_lineage(
+    column_key: str,
+    uri: str = "bolt://localhost:7687",
+    user: str = "neo4j",
+    password: str = "password123",
+) -> list:
     driver = GraphDatabase.driver(uri, auth=(user, password))
 
     with driver.session() as session:
@@ -82,7 +90,12 @@ def read_upstream_lineage(column_key, uri="bolt://localhost:7687", user="neo4j",
     return sources
 
 
-def read_downstream_lineage(column_key, uri="bolt://localhost:7687", user="neo4j", password="password123"):
+def read_downstream_lineage(
+    column_key: str,
+    uri: str = "bolt://localhost:7687",
+    user: str = "neo4j",
+    password: str = "password123",
+) -> list:
     driver = GraphDatabase.driver(uri, auth=(user, password))
 
     with driver.session() as session:
@@ -96,7 +109,9 @@ def read_downstream_lineage(column_key, uri="bolt://localhost:7687", user="neo4j
     return dependents
 
 
-def clear_graph(uri="bolt://localhost:7687", user="neo4j", password="password123"):
+def clear_graph(
+    uri: str = "bolt://localhost:7687", user: str = "neo4j", password: str = "password123"
+) -> None:
     driver = GraphDatabase.driver(uri, auth=(user, password))
 
     with driver.session() as session:

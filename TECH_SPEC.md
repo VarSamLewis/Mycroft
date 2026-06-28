@@ -32,32 +32,32 @@ Mycroft parses codebases containing SQL and Python to produce an interactive dat
                         └─────────────────┘     └─────────────────┘
                                    ▲
                                    │ HTTP
-                        ┌─────────────────┐
-                        │   FastAPI       │
-                        │ src/consum_api  │
-                        └─────────────────┘
+                        ┌─────────────────────┐
+                        │       FastAPI       │
+                        │  mycroft.consum_api │
+                        └─────────────────────┘
                                    ▲
                                    │ (future)
-                        ┌─────────────────┐
-                        │   CLI           │
-                        │ src/cli/cli.py  │
-                        └─────────────────┘
+                        ┌─────────────────────┐
+                        │         CLI         │
+                        │    mycroft.cli      │
+                        └─────────────────────┘
 ```
 
 Single database (Neo4j) stores both schema metadata and lineage. Parse order doesn't matter — nodes are created or updated via `MERGE`.
 
 ## Components
 
-### 1. Parser Service — `src/backend/`
+### 1. Parser Service — `src/mycroft/backend/`
 
 **Input:** Path to a codebase directory.
 
 **Output:** Structured lineage data.
 
 **Files:**
-- `src/backend/parsing.py` — SQL and Python parsing logic.
-- `src/backend/main.py` — Ingestion orchestration.
-- `src/backend/file.py` — File discovery and reading.
+- `src/mycroft/backend/parsing.py` — SQL and Python parsing logic.
+- `src/mycroft/backend/main.py` — Ingestion orchestration.
+- `src/mycroft/backend/file.py` — File discovery and reading.
 
 **Responsibilities:**
 - Glob for `.sql` and `.py` files.
@@ -72,7 +72,7 @@ Single database (Neo4j) stores both schema metadata and lineage. Parse order doe
 - `ast` (stdlib) — Python parsing.
 - `neo4j` — Graph database driver.
 
-### 2. Graph Store — Neo4j — `src/backend/db.py`
+### 2. Graph Store — Neo4j — `src/mycroft/backend/db.py`
 
 **Hierarchical Node Structure:**
 
@@ -106,7 +106,7 @@ Single database (Neo4j) stores both schema metadata and lineage. Parse order doe
 | `HAS_TRANSFORMATION` | Table to Transformation |
 | `DERIVED_FROM` | Column lineage (with optional `transformation` property) |
 
-### 3. API — `src/consum_api/app.py`
+### 3. API — `src/mycroft/consum_api/app.py`
 
 FastAPI application that owns the queries and response shapes.
 
@@ -141,7 +141,7 @@ FastAPI application that owns the queries and response shapes.
 
 The `SchemaExplorer` sidebar lists databases, schemas, tables, and columns for navigation.
 
-### 5. CLI — `src/cli/cli.py`
+### 5. CLI — `src/mycroft/cli/cli.py`
 
 Currently a placeholder TUI clock app built with `textual`. Not connected to ingestion or querying.
 
@@ -153,24 +153,27 @@ Populates Neo4j with curated test data covering deep chains, wide fan-out, diamo
 
 ```
 Mycroft/
+├── pyproject.toml               # Python project metadata and dependencies
 ├── COMMANDS.md                  # Common commands
 ├── TECH_SPEC.md                 # This document
 ├── main.py                      # Parser demo / standalone script
 ├── scripts/
 │   └── seed_data.py             # Neo4j seed data
 ├── src/
-│   ├── backend/
-│   │   ├── main.py              # Ingestion entry point
-│   │   ├── parsing.py           # SQL / Python parsing
-│   │   ├── db.py                # Neo4j read/write helpers
-│   │   ├── file.py              # File discovery
-│   │   └── requirements.txt
-│   ├── consum_api/
-│   │   ├── app.py               # FastAPI application
-│   │   └── requirements.txt
-│   ├── cli/
-│   │   ├── cli.py               # TUI placeholder
-│   │   └── requirements.txt
+│   ├── mycroft/
+│   │   ├── __init__.py
+│   │   ├── backend/
+│   │   │   ├── __init__.py
+│   │   │   ├── main.py          # Ingestion entry point
+│   │   │   ├── parsing.py       # SQL / Python parsing
+│   │   │   ├── db.py            # Neo4j read/write helpers
+│   │   │   └── file.py          # File discovery
+│   │   ├── consum_api/
+│   │   │   ├── __init__.py
+│   │   │   └── app.py           # FastAPI application
+│   │   └── cli/
+│   │       ├── __init__.py
+│   │       └── cli.py           # TUI placeholder
 │   └── frontend/
 │       ├── package.json
 │       ├── vite.config.ts
@@ -259,8 +262,8 @@ curl http://localhost:8000/lineage/downstream/acme.analytics.raw_events.event_id
 ### Python
 
 ```python
-from src.backend.main import ingest_codebase
-from src.backend.db import read_upstream_lineage, read_downstream_lineage
+from mycroft.backend.main import ingest_codebase
+from mycroft.backend.db import read_upstream_lineage, read_downstream_lineage
 
 # Ingest
 ingest_codebase("/path/to/codebase", database="analytics", schema="warehouse")

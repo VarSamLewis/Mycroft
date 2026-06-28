@@ -4,7 +4,7 @@
 
   - Framework: FastAPI
   - DB connection: Neo4j Bolt driver (port 7687), same neo4j package you already use
-  - Location: src/api/
+  - Location: src/mycroft/consum_api/
 
   Design:
   - The API owns the queries and response shapes
@@ -29,13 +29,12 @@
 
   CLI / Web Client
         ↓ HTTP
-     FastAPI (src/api/)
+     FastAPI (src/mycroft/consum_api/)
         ↓ Bolt
        Neo4j
 """
 
 from contextlib import asynccontextmanager
-from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -74,40 +73,41 @@ app.add_middleware(
 class Column(BaseModel):
     key: str
     name: str
-    data_type: Optional[str] = None
-    is_nullable: Optional[bool] = None
+    data_type: str | None = None
+    is_nullable: bool | None = None
 
 
 class Table(BaseModel):
     key: str
     name: str
-    type: Optional[str] = None
-    source_file: Optional[str] = None
+    type: str | None = None
+    source_file: str | None = None
 
 
 class Transformation(BaseModel):
     key: str
     type: str
-    expression: Optional[str] = None
+    expression: str | None = None
 
 
 class TableDetail(Table):
-    columns: List[Column]
-    transformations: List[Transformation]
+    columns: list[Column]
+    transformations: list[Transformation]
 
 
 class LineageNode(BaseModel):
     key: str
     name: str
-    data_type: Optional[str] = None
-    is_nullable: Optional[bool] = None
+    data_type: str | None = None
+    is_nullable: bool | None = None
 
 
 # --- Endpoints ---
 
 
-@app.get("/lineage/upstream/{column_key}", response_model=List[LineageNode])
-async def get_upstream_lineage(column_key: str):
+@app.get("/lineage/upstream/{column_key}", response_model=list[LineageNode])
+async def get_upstream_lineage(column_key: str) -> list[LineageNode]:
+    assert driver is not None
     with driver.session() as session:
         result = session.run(
             "MATCH (c:Column {key: $key})-[:DERIVED_FROM*]->(source:Column) RETURN source",
@@ -116,8 +116,9 @@ async def get_upstream_lineage(column_key: str):
         return [LineageNode(**record["source"]) for record in result]
 
 
-@app.get("/lineage/downstream/{column_key}", response_model=List[LineageNode])
-async def get_downstream_lineage(column_key: str):
+@app.get("/lineage/downstream/{column_key}", response_model=list[LineageNode])
+async def get_downstream_lineage(column_key: str) -> list[LineageNode]:
+    assert driver is not None
     with driver.session() as session:
         result = session.run(
             "MATCH (c:Column {key: $key})<-[:DERIVED_FROM*]-(downstream:Column) RETURN downstream",
@@ -126,15 +127,17 @@ async def get_downstream_lineage(column_key: str):
         return [LineageNode(**record["downstream"]) for record in result]
 
 
-@app.get("/tables", response_model=List[Table])
-async def get_tables():
+@app.get("/tables", response_model=list[Table])
+async def get_tables() -> list[Table]:
+    assert driver is not None
     with driver.session() as session:
         result = session.run("MATCH (t:Table) RETURN t")
         return [Table(**record["t"]) for record in result]
 
 
 @app.get("/tables/{table_key}", response_model=TableDetail)
-async def get_table(table_key: str):
+async def get_table(table_key: str) -> TableDetail:
+    assert driver is not None
     with driver.session() as session:
         result = session.run(
             "MATCH (t:Table {key: $key}) "
@@ -145,13 +148,15 @@ async def get_table(table_key: str):
         )
         record = result.single()
         if not record:
-            raise HTTPException(
-                status_code=404, detail=f"Table '{table_key}' not found"
-            )
+            raise HTTPException(status_code=404, detail=f"Table '{table_key}' not found")
         return TableDetail(
             **record["t"],
             columns=[Column(**c) for c in record["columns"] if c],
-            transformations=[
-                Transformation(**tr) for tr in record["transformations"] if tr
-            ],
+            transformations=[Transformation(**tr) for tr in record["transformations"] if tr],
         )
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)

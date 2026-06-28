@@ -17,7 +17,6 @@ Connects to Neo4j at bolt://localhost:7687 with default credentials.
 """
 
 import argparse
-import sys
 
 from neo4j import GraphDatabase
 
@@ -1028,27 +1027,15 @@ def run(session):
 
 
 def print_summary():
-    total_cols = sum(len(t["key"].split(".")) > 3 for t in COLUMNS)
-
     print()
     print("  ┌─────────────────────────────────────────────────────────────┐")
     print("  │  Seed data summary                                         │")
     print("  ├─────────────────────────────────────────────────────────────┤")
-    print(
-        f"  │  Databases:    {len(DATABASES):>3}                                         │"
-    )
-    print(
-        f"  │  Schemas:      {len(SCHEMAS):>3}                                         │"
-    )
-    print(
-        f"  │  Tables:       {len(TABLES):>3}                                         │"
-    )
-    print(
-        f"  │  Columns:      {len(COLUMNS):>3}                                         │"
-    )
-    print(
-        f"  │  Lineage edges:{len(LINEAGE_EDGES):>3}                                         │"
-    )
+    print(f"  │  Databases:    {len(DATABASES):>3}                                         │")
+    print(f"  │  Schemas:      {len(SCHEMAS):>3}                                         │")
+    print(f"  │  Tables:       {len(TABLES):>3}                                         │")
+    print(f"  │  Columns:      {len(COLUMNS):>3}                                         │")
+    print(f"  │  Lineage edges:{len(LINEAGE_EDGES):>3}                                         │")
     print(
         f"  │  Transformations: {len(TRANSFORMATIONS):>3}                                       │"
     )
@@ -1075,13 +1062,9 @@ def print_summary():
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Seed Mycroft Neo4j with curated test data"
-    )
+    parser = argparse.ArgumentParser(description="Seed Mycroft Neo4j with curated test data")
     parser.add_argument("--clear", action="store_true", help="Clear graph and exit")
-    parser.add_argument(
-        "--seed-only", action="store_true", help="Skip clearing, just seed"
-    )
+    parser.add_argument("--seed-only", action="store_true", help="Skip clearing, just seed")
     args = parser.parse_args()
 
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))

@@ -1,5 +1,4 @@
 import pytest
-
 from main import extract_graph, extract_graph_from_python, extract_sql_from_python, split_query
 
 
@@ -202,11 +201,11 @@ df = spark.sql("""
         assert "INSERT INTO logs" in result["sql_statements"][0]["sql"]
 
     def test_multiple_statements(self):
-        code = '''
+        code = """
 df1 = spark.sql("SELECT a FROM x")
 df2 = spark.sql("SELECT b FROM y")
 df3 = spark.read.table("z")
-'''
+"""
         result = extract_sql_from_python(code)
 
         assert len(result["sql_statements"]) == 2
@@ -236,10 +235,10 @@ spark.sql("""
         assert "db.public.users" in result["nodes"]["tables"]
 
     def test_multiple_sql_statements_merged(self):
-        code = '''
+        code = """
 spark.sql("CREATE TABLE a AS (SELECT x FROM b)")
 spark.sql("CREATE TABLE c AS (SELECT y FROM d)")
-'''
+"""
         result = extract_graph_from_python(code, database="db", schema="public")
 
         assert "db.public.a" in result["nodes"]["tables"]
@@ -249,7 +248,9 @@ spark.sql("CREATE TABLE c AS (SELECT y FROM d)")
 
     def test_source_file_propagates(self):
         code = 'spark.sql("CREATE TABLE x AS (SELECT a FROM y)")'
-        result = extract_graph_from_python(code, database="db", schema="public", source_file="jobs/etl.py")
+        result = extract_graph_from_python(
+            code, database="db", schema="public", source_file="jobs/etl.py"
+        )
 
         assert result["nodes"]["tables"]["db.public.x"]["source_file"] == "jobs/etl.py"
 
