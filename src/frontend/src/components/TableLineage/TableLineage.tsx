@@ -3,7 +3,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   BackgroundVariant,
 } from '@xyflow/react';
 import { TableNodeComponent } from './TableNode';
@@ -65,10 +64,6 @@ export function TableLineage() {
           />
           <Controls
             style={{ background: '#1e293b', border: '1px solid #334155' }}
-          />
-          <MiniMap
-            style={{ background: '#0f172a', border: '1px solid #334155' }}
-            nodeColor="#6366f1"
           />
         </ReactFlow>
       </div>

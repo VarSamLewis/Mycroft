@@ -85,8 +85,15 @@ class Table(BaseModel):
     source_file: Optional[str] = None
 
 
+class Transformation(BaseModel):
+    key: str
+    type: str
+    expression: Optional[str] = None
+
+
 class TableDetail(Table):
     columns: List[Column]
+    transformations: List[Transformation]
 
 
 class LineageNode(BaseModel):
@@ -132,7 +139,8 @@ async def get_table(table_key: str):
         result = session.run(
             "MATCH (t:Table {key: $key}) "
             "OPTIONAL MATCH (t)-[:HAS_COLUMN]->(c:Column) "
-            "RETURN t, collect(c) AS columns",
+            "OPTIONAL MATCH (t)-[:HAS_TRANSFORMATION]->(tr:Transformation) "
+            "RETURN t, collect(c) AS columns, collect(DISTINCT tr) AS transformations",
             key=table_key,
         )
         record = result.single()
@@ -143,4 +151,7 @@ async def get_table(table_key: str):
         return TableDetail(
             **record["t"],
             columns=[Column(**c) for c in record["columns"] if c],
+            transformations=[
+                Transformation(**tr) for tr in record["transformations"] if tr
+            ],
         )

@@ -2,11 +2,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useUpstreamLineage, useDownstreamLineage } from '../../hooks/useLineage';
 import type { LineageNode } from '../../types';
 
-function parseTableKey(key: string): string {
-  const parts = key.split('.');
-  return parts.slice(0, -1).join('.');
-}
-
 function parseTableName(key: string): string {
   const parts = key.split('.');
   return parts[parts.length - 2] ?? '';
@@ -21,12 +16,10 @@ function LineageTable({
   title,
   items,
   direction,
-  columnKey,
 }: {
   title: string;
   items: LineageNode[];
   direction: 'upstream' | 'downstream';
-  columnKey: string;
 }) {
   const navigate = useNavigate();
 
@@ -153,14 +146,12 @@ export function ColumnLineageTable() {
           title="Upstream lineage"
           items={upstream}
           direction="upstream"
-          columnKey={decodedKey!}
         />
 
         <LineageTable
           title="Downstream lineage"
           items={downstream}
           direction="downstream"
-          columnKey={decodedKey!}
         />
       </div>
     </div>

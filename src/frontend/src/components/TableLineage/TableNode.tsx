@@ -2,7 +2,7 @@ import { memo } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { useNavigate } from 'react-router-dom';
 
-interface TableNodeData {
+export interface TableNodeData {
   label: string;
   fullKey: string;
   role: 'center' | 'upstream' | 'downstream';

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ReactFlow, Background, Controls, MiniMap, BackgroundVariant } from '@xyflow/react';
+import { useMemo, useState } from 'react';
+import { ReactFlow, Background, Controls, BackgroundVariant } from '@xyflow/react';
 import type { Edge, Node } from '@xyflow/react';
 
 import { useTables } from '../../hooks/useTables';
@@ -8,6 +8,7 @@ import type { SchemaTree, Table, TableDetail, LineageNode } from '../../types';
 import { useQueries } from '@tanstack/react-query';
 
 import { TableNodeComponent } from '../TableLineage/TableNode';
+import type { TableNodeData } from '../TableLineage/TableNode';
 
 type RepoKey = { database: string; schema: string };
 
@@ -36,7 +37,6 @@ export function RepoGraph() {
   }, [tables]);
 
   const databases = useMemo(() => Object.keys(schemaTree), [schemaTree]);
-  const schemas = useMemo(() => (schemaTree[repoKey.database] ? Object.keys(schemaTree[repoKey.database]) : []), [schemaTree, repoKey.database]);
 
   const availableRepos: RepoKey[] = useMemo(() => {
     const repos: RepoKey[] = [];
@@ -48,21 +48,23 @@ export function RepoGraph() {
     return repos;
   }, [schemaTree]);
 
-  // Auto-pick a real repo if defaults aren't present.
-  useEffect(() => {
-    const hasDefault = availableRepos.some(
+  // Auto-pick a real repo if the current selection isn't available.
+  const effectiveRepoKey = useMemo(() => {
+    const hasCurrent = availableRepos.some(
       (r) => r.database === repoKey.database && r.schema === repoKey.schema,
     );
-    if (!hasDefault && availableRepos.length > 0) {
-      setRepoKey(availableRepos[0]);
-    }
-  }, [availableRepos, repoKey.database, repoKey.schema]);
+    if (hasCurrent) return repoKey;
+    if (availableRepos.length > 0) return availableRepos[0];
+    return repoKey;
+  }, [availableRepos, repoKey]);
+
+  const schemas = useMemo(() => (schemaTree[effectiveRepoKey.database] ? Object.keys(schemaTree[effectiveRepoKey.database]) : []), [schemaTree, effectiveRepoKey.database]);
 
   const repoTables: Table[] = useMemo(() => {
     if (!tables) return [];
-    const prefix = `${repoKey.database}.${repoKey.schema}.`;
+    const prefix = `${effectiveRepoKey.database}.${effectiveRepoKey.schema}.`;
     return tables.filter((t) => t.key.startsWith(prefix));
-  }, [tables, repoKey.database, repoKey.schema]);
+  }, [tables, effectiveRepoKey.database, effectiveRepoKey.schema]);
 
   // Limit to keep the UI responsive.
   const maxTables = 60;
@@ -198,7 +200,7 @@ export function RepoGraph() {
             <>
               <select
                 className="text-xs bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
-                value={repoKey.database}
+                value={effectiveRepoKey.database}
                 onChange={(e) => setRepoKey((rk) => ({ ...rk, database: e.target.value }))}
               >
                 {databases.map((db) => (
@@ -209,7 +211,7 @@ export function RepoGraph() {
               </select>
               <select
                 className="text-xs bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200"
-                value={repoKey.schema}
+                value={effectiveRepoKey.schema}
                 onChange={(e) => setRepoKey((rk) => ({ ...rk, schema: e.target.value }))}
               >
                 {schemas.map((s) => (
@@ -239,7 +241,7 @@ export function RepoGraph() {
         {!isLoading && !isError && graph.nodes.length === 0 && (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-10 p-4">
             <p className="text-4xl mb-2">⬢</p>
-            <p>No data found for `{repoKey.database}.{repoKey.schema}`.</p>
+            <p>No data found for `{effectiveRepoKey.database}.{effectiveRepoKey.schema}`.</p>
           </div>
         )}
 
@@ -247,11 +249,10 @@ export function RepoGraph() {
           ...n,
           // Make sure TableNodeComponent navigation works.
           // It treats non-center nodes as clickable; we want all table nodes clickable.
-          data: { ...(n.data as any), role: 'upstream' },
+          data: { ...(n.data as unknown as TableNodeData), role: 'upstream' },
         }))} edges={graph.edges} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.3 }} proOptions={{ hideAttribution: true }}>
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="#334155" />
           <Controls style={{ background: '#1e293b', border: '1px solid #334155' }} />
-          <MiniMap style={{ background: '#0f172a', border: '1px solid #334155' }} nodeColor="#6366f1" />
         </ReactFlow>
       </div>
     </div>
