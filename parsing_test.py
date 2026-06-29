@@ -1,20 +1,20 @@
 import json
 import sys
 from time import time
-from typing import Dict
 
 import test_strings
-from src.backend.parsing import extract_graph, extract_graph_from_python
+
+from mycroft.backend.parsing import extract_graph, extract_graph_from_python
 
 
-def test_parse(name: str, input: str) -> Dict:
+def test_parse(name: str, input: str) -> dict:
     str_length: int = len(input)
     start: float = time()
 
     if name.startswith("PYSPARK") or name.startswith("MIXED"):
-        result = extract_graph_from_python(input)
+        extract_graph_from_python(input)
     else:
-        result = extract_graph(input)
+        extract_graph(input)
 
     end: float = time() - start
     return {

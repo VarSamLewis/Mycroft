@@ -3,10 +3,10 @@ import ast as python_ast
 import sqlglot
 from sqlglot import exp, parse_one
 
-
 # ---------------------------------------------------------------------------
 # Query splitting
 # ---------------------------------------------------------------------------
+
 
 def _is_comment_only(s: str) -> bool:
     lines = [line.strip() for line in s.splitlines()]
@@ -22,6 +22,7 @@ def split_query(sql: str):
 # Graph structure helpers
 # ---------------------------------------------------------------------------
 
+
 def _empty_graph():
     return {
         "nodes": {"databases": {}, "schemas": {}, "tables": {}, "columns": {}},
@@ -32,6 +33,7 @@ def _empty_graph():
 # ---------------------------------------------------------------------------
 # GraphExtractor — builds the lineage graph from a single SQL string
 # ---------------------------------------------------------------------------
+
 
 class GraphExtractor:
     def __init__(self, database, schema, source_file):
@@ -143,7 +145,9 @@ class GraphExtractor:
                 self._expand_star(target_table_key, main_source)
                 continue
 
-            target_col_name = insert_col_names[idx] if idx < len(insert_col_names) else expression.alias_or_name
+            target_col_name = (
+                insert_col_names[idx] if idx < len(insert_col_names) else expression.alias_or_name
+            )
             target_col_key = self._add_column(target_table_key, target_col_name)
 
             source_col = expression.find(exp.Column)
@@ -182,7 +186,9 @@ class GraphExtractor:
             if not source_col:
                 continue
 
-            source_table_name = self.alias_to_table.get(source_col.table, source_col.table or update_source)
+            source_table_name = self.alias_to_table.get(
+                source_col.table, source_col.table or update_source
+            )
             source_col_key = self._add_column(
                 f"{self.schema_key}.{source_table_name}", source_col.name
             )
@@ -205,11 +211,13 @@ class GraphExtractor:
         return col_key
 
     def _add_derived_from(self, from_key: str, to_key: str, transformation):
-        self.graph["edges"]["derived_from"].append({
-            "from": from_key,
-            "to": to_key,
-            "transformation": transformation,
-        })
+        self.graph["edges"]["derived_from"].append(
+            {
+                "from": from_key,
+                "to": to_key,
+                "transformation": transformation,
+            }
+        )
 
     def _resolve_source(self, table_ref: str, col_name: str, fallback: str):
         if table_ref in self.alias_to_table:
@@ -229,9 +237,9 @@ class GraphExtractor:
 
     @staticmethod
     def _detect_transformation(expression):
-        is_transformed = not isinstance(
-            expression, (exp.Column, exp.Alias)
-        ) or not isinstance(expression.unalias(), exp.Column)
+        is_transformed = not isinstance(expression, (exp.Column, exp.Alias)) or not isinstance(
+            expression.unalias(), exp.Column
+        )
         return expression.sql() if is_transformed else None
 
     @staticmethod
@@ -247,11 +255,13 @@ class GraphExtractor:
                 for expr in cte_select.expressions:
                     col = expr.find(exp.Column)
                     if col:
-                        columns.append({
-                            "name": expr.alias_or_name,
-                            "source_column": col.name,
-                            "source_table": source_table,
-                        })
+                        columns.append(
+                            {
+                                "name": expr.alias_or_name,
+                                "source_column": col.name,
+                                "source_table": source_table,
+                            }
+                        )
                 cte_map[cte_name] = {"columns": columns, "source_table": source_table}
         return cte_map
 
@@ -262,7 +272,7 @@ class GraphExtractor:
 
     @staticmethod
     def _get_insert_col_names(insert_node) -> list:
-        if insert_node and insert_node.this and hasattr(insert_node.this, 'expressions'):
+        if insert_node and insert_node.this and hasattr(insert_node.this, "expressions"):
             return [e.name for e in insert_node.this.expressions]
         return []
 
@@ -270,6 +280,7 @@ class GraphExtractor:
 # ---------------------------------------------------------------------------
 # Module-level API (used by main.py and tests)
 # ---------------------------------------------------------------------------
+
 
 def extract_graph(sql, database="default", schema="public", source_file=None):
     return GraphExtractor(database, schema, source_file).extract(sql)
@@ -354,6 +365,7 @@ def extract_sql_from_python(code):
 # Graph merging
 # ---------------------------------------------------------------------------
 
+
 def merge_graphs(graphs):
     merged = _empty_graph()
     seen_edges = {edge_type: set() for edge_type in merged["edges"]}
@@ -372,9 +384,7 @@ def merge_graphs(graphs):
     return merged
 
 
-def extract_graph_from_python(
-    code, database="default", schema="public", source_file=None
-):
+def extract_graph_from_python(code, database="default", schema="public", source_file=None):
     extracted = extract_sql_from_python(code)
     graphs = []
 

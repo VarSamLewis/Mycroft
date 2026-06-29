@@ -1,7 +1,0 @@
-sqlglot
-graphviz
-pytest
-neo4j
-pygithub
-typing_extensions
-py-spy

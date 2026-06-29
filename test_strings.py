@@ -17,17 +17,17 @@ CREATE TABLE cleaned_users AS (
 )
 """
 
-PYSPARK_1 = '''
+PYSPARK_1 = """
 df = spark.sql("SELECT id, amount FROM transactions")
 df.write.saveAsTable("output")
-'''
+"""
 
-PYSPARK_2 = '''
+PYSPARK_2 = """
 users = spark.read.table("users")
 orders = spark.read.table("orders")
 result = users.join(orders, "user_id")
 result.write.saveAsTable("user_orders")
-'''
+"""
 
 SQL_4 = """
 WITH active_users AS (

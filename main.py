@@ -1,6 +1,5 @@
 import ast
 
-import sqlglot
 from neo4j import GraphDatabase
 from sqlglot import exp, parse_one
 
@@ -135,9 +134,7 @@ def extract_graph(sql, database="default", schema="public", source_file=None):
                         "data_type": None,
                         "is_nullable": None,
                     }
-                    edges["has_column"].append(
-                        {"from": source_table_key, "to": source_col_key}
-                    )
+                    edges["has_column"].append({"from": source_table_key, "to": source_col_key})
 
                 edges["derived_from"].append(
                     {
@@ -197,9 +194,7 @@ def extract_graph(sql, database="default", schema="public", source_file=None):
                     "data_type": None,
                     "is_nullable": None,
                 }
-                edges["has_column"].append(
-                    {"from": target_table_key, "to": target_col_key}
-                )
+                edges["has_column"].append({"from": target_table_key, "to": target_col_key})
 
                 if source_col:
                     source_table_ref = source_col.table
@@ -228,9 +223,7 @@ def extract_graph(sql, database="default", schema="public", source_file=None):
                             "data_type": None,
                             "is_nullable": None,
                         }
-                        edges["has_column"].append(
-                            {"from": source_table_key, "to": source_col_key}
-                        )
+                        edges["has_column"].append({"from": source_table_key, "to": source_col_key})
 
                     edges["derived_from"].append(
                         {
@@ -351,9 +344,7 @@ def merge_graphs(graphs):
     return merged
 
 
-def extract_graph_from_python(
-    code, database="default", schema="public", source_file=None
-):
+def extract_graph_from_python(code, database="default", schema="public", source_file=None):
     extracted = extract_sql_from_python(code)
     graphs = []
 
@@ -383,9 +374,7 @@ def extract_graph_from_python(
     return merge_graphs(graphs)
 
 
-def write_graph_to_neo4j(
-    graph, uri="bolt://localhost:7687", user="neo4j", password="password123"
-):
+def write_graph_to_neo4j(graph, uri="bolt://localhost:7687", user="neo4j", password="password123"):
     driver = GraphDatabase.driver(uri, auth=(user, password))
 
     with driver.session() as session:

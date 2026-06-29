@@ -26,7 +26,10 @@ class ClockApp(App):
         self.query_one(Digits).update(f"{clock:%T}")
 
 
-
-if __name__ == "__main__":
+def main() -> None:
     app = ClockApp()
     app.run()
+
+
+if __name__ == "__main__":
+    main()
